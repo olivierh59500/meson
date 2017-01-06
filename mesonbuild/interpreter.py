@@ -1252,32 +1252,16 @@ class Interpreter(InterpreterBase):
             print(item)
             raise InterpreterException('Module returned a value of unknown type.')
 
-    def module_method_callback(self, return_object):
-        if not isinstance(return_object, ModuleReturnValue):
-            raise InterpreterException('Bug in module, it returned an invalid object')
-        invalues = return_object.new_objects
-        unwrap_single = False
-        if invalues is None:
-            return
+    def process_new_values(self, invalues):
         if not isinstance(invalues, list):
-            unwrap_single = True
             invalues = [invalues]
-        outvalues = []
         for v in invalues:
-            if isinstance(v, build.CustomTarget):
+            if isinstance(v, (build.BuildTarget, build.CustomTarget, build.RunTarget)):
                 self.add_target(v.name, v)
-                outvalues.append(CustomTargetHolder(v, self))
-            elif isinstance(v, (int, str)):
-                outvalues.append(v)
-            elif isinstance(v, build.Executable):
-                self.add_target(v.name, v)
-                outvalues.append(ExecutableHolder(v, self))
             elif isinstance(v, list):
-                outvalues.append(self.module_method_callback(v))
+                self.module_method_callback(v)
             elif isinstance(v, build.GeneratedList):
-                outvalues.append(GeneratedListHolder(v))
-            elif isinstance(v, build.RunTarget):
-                self.add_target(v.name, v)
+                pass
             elif isinstance(v, build.RunScript):
                 self.build.install_scripts.append(v)
             elif isinstance(v, build.Data):
@@ -1285,13 +1269,17 @@ class Interpreter(InterpreterBase):
             elif isinstance(v, dependencies.InternalDependency):
                 # FIXME: This is special cased and not ideal:
                 # The first source is our new VapiTarget, the rest are deps
-                self.module_method_callback(v.sources[0])
-                outvalues.append(InternalDependencyHolder(v))
+                self.process_new_values(v.sources[0])
             else:
-                print(v)
                 raise InterpreterException('Module returned a value of unknown type.')
-        if len(outvalues) == 1 and unwrap_single:
-            return outvalues[0]
+
+    def module_method_callback(self, return_object):
+        if not isinstance(return_object, ModuleReturnValue):
+            print(return_object)
+            assert(False)
+            raise InterpreterException('Bug in module, it returned an invalid object')
+        invalues = return_object.new_objects
+        self.process_new_values(invalues)
         return self.holderify(return_object.return_value)
 
     def get_build_def_files(self):
